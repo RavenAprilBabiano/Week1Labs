@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,57 @@ import {
   StyleSheet,
   FlatList,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import TaskCard from '../components/TaskCard';
 
 export default function AddTaskScreen() {
   const [taskText, setTaskText] = useState('');
   const [tasks, setTasks] = useState([]);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [quote, setQuote] = useState("Loading today's motivation...");
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    const loadTasks = async () => {
+      try {
+        const savedData = await AsyncStorage.getItem('tasks');
+        if (savedData !== null) {
+          setTasks(JSON.parse(savedData));
+        }
+      } catch (error) {
+        console.error('Failed to load tasks:', error);
+      } finally {
+        setIsLoaded(true);
+      }
+    };
+    loadTasks();
+  }, []);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    const saveTasks = async () => {
+      try {
+        await AsyncStorage.setItem('tasks', JSON.stringify(tasks));
+      } catch (error) {
+        console.error('Failed to save tasks:', error);
+      }
+    };
+    saveTasks();
+  }, [tasks, isLoaded]);
+
+  useEffect(() => {
+    fetch('https://api.quotable.io/random')
+      .then((response) => response.json())
+      .then((data) => setQuote(data.content))
+      .catch(() => setQuote('Believe in yourself and get it done!'));
+  }, []);
 
   function handleAddTask() {
-    if (taskText.trim() === '') return;
+    if (taskText.trim() === '') {
+      setErrorMessage('Please type a task before adding it.');
+      return;
+    }
 
     const newTask = {
       id: Date.now().toString(),
@@ -25,10 +67,34 @@ export default function AddTaskScreen() {
 
     setTasks([...tasks, newTask]);
     setTaskText('');
+    setErrorMessage('');
+  }
+
+  function handleToggleTask(id) {
+    setTasks(
+      tasks.map((t) =>
+        t.id === id ? { ...t, done: !t.done } : t
+      )
+    );
+  }
+
+  function handleDeleteTask(id) {
+    setTasks(tasks.filter((t) => t.id !== id));
   }
 
   return (
     <View style={styles.container}>
+      <Text style={styles.quote}>💡 {quote}</Text>
+
+      <Button
+        title="New Quote"
+        onPress={() => {
+          fetch('https://api.quotable.io/random')
+            .then((response) => response.json())
+            .then((data) => setQuote(data.content));
+        }}
+      />
+
       <Text style={styles.heading}>Add a Task</Text>
 
       <TextInput
@@ -38,12 +104,20 @@ export default function AddTaskScreen() {
         onChangeText={setTaskText}
       />
 
+      {errorMessage !== '' && (
+        <Text style={styles.error}>{errorMessage}</Text>
+      )}
+
       <Button
         title="Add Task"
         onPress={handleAddTask}
       />
 
       <Text>You have {tasks.length} task(s)</Text>
+
+      {tasks.length > 0 && tasks.every((t) => t.done) && (
+        <Text style={styles.celebration}>🎉 All done! Great work!</Text>
+      )}
 
       <FlatList
         data={tasks}
@@ -52,8 +126,14 @@ export default function AddTaskScreen() {
           <TaskCard
             title={item.title}
             done={item.done}
+            onToggle={() => handleToggleTask(item.id)}
+            onDelete={() => handleDeleteTask(item.id)}
           />
         )}
+        ListEmptyComponent={
+          <Text style={styles.empty}>No tasks yet — add one above! 📝</Text>
+        }
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
         style={styles.list}
       />
     </View>
@@ -82,7 +162,37 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
+  error: {
+    color: '#B23A48',
+    marginBottom: 10,
+  },
+
+  celebration: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1E8A7A',
+    textAlign: 'center',
+    marginVertical: 12,
+  },
+
+  quote: {
+    fontStyle: 'italic',
+    color: '#6B7280',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+
   list: {
     marginTop: 16,
+  },
+
+  empty: {
+    textAlign: 'center',
+    color: '#6B7280',
+    marginTop: 24,
+  },
+
+  separator: {
+    height: 8,
   },
 });
